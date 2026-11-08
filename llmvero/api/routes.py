@@ -159,7 +159,7 @@ def _save_documents(store: Store, settings: Settings, ds_id: str, docs: list[Doc
         text = doc.as_text()
         if len(text) > limit:
             raise HTTPException(
-                status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                413,
                 f"document {i} has {len(text)} characters; the limit is {limit} (LLMVERO_MAX_DOCUMENT_CHARS)",
             )
         rows.append((text, doc.external_id, doc.metadata))
@@ -193,7 +193,7 @@ async def upload_documents(
     _dataset_or_404(store, dataset_id)
     raw = await file.read(MAX_UPLOAD_BYTES + 1)
     if len(raw) > MAX_UPLOAD_BYTES:
-        raise HTTPException(status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, "file is larger than 50 MB")
+        raise HTTPException(413, "file is larger than 50 MB")
     try:
         docs = parse_upload(file.filename or "", raw.decode("utf-8-sig"), text_column)
     except (ValueError, UnicodeDecodeError) as exc:
@@ -201,6 +201,23 @@ async def upload_documents(
     if not docs:
         raise HTTPException(422, "the file has no usable records")
     return _save_documents(store, settings, dataset_id, docs)
+
+
+async def _read_body_capped(request: Request, limit: int, message: str) -> bytes:
+    """Read the request body, stopping as soon as it passes `limit` bytes."""
+    too_large = HTTPException(413, message)
+    try:
+        declared = int(request.headers.get("content-length", "0"))
+    except ValueError:
+        declared = 0
+    if declared > limit:
+        raise too_large
+    body = bytearray()
+    async for chunk in request.stream():
+        body += chunk
+        if len(body) > limit:
+            raise too_large
+    return bytes(body)
 
 
 def parse_upload(filename: str, content: str, text_column: str = "text") -> list[DocumentIn]:
@@ -370,9 +387,7 @@ async def create_training_data(
 
     Example: `curl --data-binary @login.json localhost:8000/v1/training-data`
     """
-    raw = await request.body()
-    if len(raw) > MAX_RECORDS_BYTES:
-        raise HTTPException(status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, "the file is larger than 100 MB")
+    raw = await _read_body_capped(request, MAX_RECORDS_BYTES, "the file is larger than 100 MB")
     try:
         rows, hint = load_rows(raw)
         body = GenerateRequest(
@@ -430,7 +445,7 @@ async def generate(body: GenerateRequest, request: Request, settings: Settings =
     texts = [d.as_text() for d in body.documents]
     if sum(len(t) for t in texts) > MAX_GENERATE_CHARS:
         raise HTTPException(
-            status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            413,
             f"/v1/generate accepts up to {MAX_GENERATE_CHARS} characters; create a dataset and a job instead",
         )
     name, model = _resolve_provider(body, settings)

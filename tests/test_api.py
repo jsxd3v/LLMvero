@@ -393,3 +393,18 @@ def test_eval_format_gives_question_answer_and_facts(client):
         "/v1/generate", json={"documents": [{"text": "Backups are kept for 30 days."}], "format": "eval"}
     ).json()
     assert text["examples"][0]["facts"] == "Backups are kept for 30 days."
+
+
+def test_training_data_rejects_oversized_body(client, monkeypatch):
+    from llmvero.api import routes
+
+    monkeypatch.setattr(routes, "MAX_RECORDS_BYTES", 100)
+    r = client.post("/v1/training-data", content="x" * 101)
+    assert r.status_code == 413
+
+    def chunks():  # no content-length: the stream itself must be cut off
+        for _ in range(5):
+            yield b"x" * 50
+
+    r = client.post("/v1/training-data", content=chunks())
+    assert r.status_code == 413
