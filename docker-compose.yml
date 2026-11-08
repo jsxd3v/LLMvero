@@ -1,0 +1,20 @@
+name: llmvero
+
+services:
+  llmvero:
+    build: .
+    image: llmvero:latest
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      LLMVERO_DATA_DIR: /data
+    ports:
+      - "8000:8000"
+    volumes:
+      - llmvero-data:/data
+    # Lets the container reach Ollama or a Next.js dev server running on the host.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+volumes:
+  llmvero-data:
