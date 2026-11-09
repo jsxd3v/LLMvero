@@ -542,7 +542,8 @@ PROFILE_INSTRUCTIONS = (
 )
 
 _PROFILE_LINE = re.compile(r"^- User (.+?): ", re.MULTILINE)
-_USER_MENTION = re.compile(r"\buser\s+([\w.@-]+?)(?=[\s,.;:!?'’)]|$)", re.IGNORECASE)
+# "user 23", "user u-17", "user maria.santos@example.com": dots are allowed inside an id, not at its end.
+_USER_MENTION = re.compile(r"\buser\s+([\w@-]+(?:\.[\w@-]+)*)", re.IGNORECASE)
 
 
 def profile_users(sheet: str) -> list[str]:

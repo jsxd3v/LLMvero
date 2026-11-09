@@ -116,3 +116,42 @@ def test_summary_sheet_questions_about_one_user_are_detected():
     assert names_a_known_user("Was User 7's count the highest?", users)
     assert not names_a_known_user("Who was the most active user on November 6?", users)
     assert not names_a_known_user("How many user logins were there?", users)  # "user logins" is not an id
+
+
+def test_user_ids_with_dots_and_emails_are_recognised():
+    from llmvero.core.records import (
+        analyze_records,
+        is_single_user_question,
+        names_a_known_user,
+        profile_users,
+    )
+
+    rows = [
+        {"email": "maria.santos@example.com", "date_time": "2026-11-06 09:01:00"},
+        {"email": "maria.santos@example.com", "date_time": "2026-11-06 09:30:00"},
+        {"email": "john.doe@example.com", "date_time": "2026-11-06 10:15:00"},
+    ]
+    facts = dict(summarize_records(rows, event="login"))
+    users = profile_users(facts["user_profiles_1"])
+    assert sorted(users) == ["john.doe@example.com", "maria.santos@example.com"]
+
+    assert is_single_user_question("How many times did user maria.santos@example.com log in?", users)
+    assert is_single_user_question(
+        "When did user john.doe@example.com first log in on November 6, 2026?", users
+    )
+    assert is_single_user_question(
+        "Was user john.doe@example.com.", users
+    )  # sentence dot isn't part of the id
+    assert not is_single_user_question(
+        "Did user maria.santos@example.com log in before user john.doe@example.com?", users
+    )
+    assert not is_single_user_question("When did user ghost@example.com log in?", users)
+    assert names_a_known_user("How many logins did user maria.santos@example.com make?", users)
+
+    a = analyze_records(rows, event="login")
+    call = a.tool_call_for("user_profiles_1", "How many times did user maria.santos@example.com log in?")
+    assert (
+        call is not None
+        and call[0] == "get_user_activity"
+        and call[1]["user_id"] == "maria.santos@example.com"
+    )
